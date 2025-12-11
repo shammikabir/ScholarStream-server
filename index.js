@@ -1,5 +1,5 @@
 const express = require("express");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
@@ -117,6 +117,133 @@ async function run() {
       const result = await scholarshipsCollection.find().toArray();
       res.send(result);
     });
+
+    //update scholarship-
+
+    app.put("/scholarships/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const data = req.body;
+
+        console.log("Updating Scholarship:", id, data); // <-- Add this
+
+        const result = await scholarshipsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: data }
+        );
+
+        res.send({ success: true, result });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ success: false, message: err.message });
+      }
+    });
+
+    //  DELETE  scholarship
+    app.delete("/scholarships/:id", async (req, res) => {
+      const { id } = req.params;
+      const result = await scholarshipsCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+      res.send({ success: true, result });
+    });
+
+    //User manage
+    //filter role--user
+
+    app.get("/users/filter", async (req, res) => {
+      const role = req.query.role;
+
+      let query = {};
+      if (role && role !== "all") {
+        query.role = role;
+      }
+
+      const users = await usersCollection.find(query).toArray();
+
+      res.send({
+        success: true,
+        users,
+      });
+    });
+
+    //user role update
+
+    // Update User Role
+    app.put("/user/update-role/:email", async (req, res) => {
+      const email = req.params.email;
+      const { role } = req.body;
+
+      const result = await usersCollection.updateOne(
+        { email },
+        { $set: { role } }
+      );
+
+      res.send({
+        success: true,
+        message: "User role updated successfully",
+        result,
+      });
+    });
+
+    // Delete User by Email
+    app.delete("/user/:email", async (req, res) => {
+      const email = req.params.email;
+
+      const result = await usersCollection.deleteOne({ email });
+
+      res.send({
+        success: true,
+        message: "User deleted successfully",
+        result,
+      });
+    });
+
+    //analytics
+    app.get("/analytics", async (req, res) => {
+      const totalUsers = await usersCollection.countDocuments();
+      const totalScholarships = await scholarshipsCollection.countDocuments();
+
+      const allScholarships = await scholarshipsCollection.find().toArray();
+
+      const totalFees = allScholarships.reduce(
+        (sum, item) => sum + Number(item.applicationFees || 0),
+        0
+      );
+
+      // Applications per university
+      const universityApplications = Object.values(
+        allScholarships.reduce((acc, item) => {
+          acc[item.universityName] = acc[item.universityName] || {
+            university: item.universityName,
+            count: 0,
+          };
+          acc[item.universityName].count++;
+          return acc;
+        }, {})
+      );
+
+      // Scholarship category distribution
+      const categoryDistribution = Object.values(
+        allScholarships.reduce((acc, item) => {
+          acc[item.scholarshipCategory] = acc[item.scholarshipCategory] || {
+            category: item.scholarshipCategory,
+            value: 0,
+          };
+          acc[item.scholarshipCategory].value++;
+          return acc;
+        }, {})
+      );
+
+      res.send({
+        totalUsers,
+        totalFees,
+        totalScholarships,
+        universityApplications,
+        categoryDistribution,
+      });
+    });
+
     //profile update
     // Update User Profile Photo
     // Update User Profile Photo by Email
