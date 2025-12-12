@@ -60,6 +60,7 @@ async function run() {
     const db = client.db("Finalprojectdb");
     const usersCollection = db.collection("users");
     const scholarshipsCollection = db.collection("scholarships");
+    const reviewsCollection = db.collection("reviews");
 
     console.log("MongoDB Connected Successfully!");
 
@@ -146,6 +147,34 @@ async function run() {
         _id: new ObjectId(id),
       });
       res.send({ success: true, result });
+    });
+
+    //scholarship by id
+    app.get("/scholarships/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const result = await scholarshipsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!result) {
+          return res.status(404).send({ message: "Scholarship not found" });
+        }
+
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Server error" });
+      }
+    });
+
+    //reviews
+    app.post("/reviews", async (req, res) => {
+      const review = req.body;
+
+      review.reviewDate = new Date();
+
+      const result = await reviewsCollection.insertOne(review);
+      res.send(result);
     });
 
     //User manage
@@ -243,7 +272,12 @@ async function run() {
         categoryDistribution,
       });
     });
+    //get limited bill for home
 
+    app.get("/top-scholarships", async (req, res) => {
+      const result = await scholarshipsCollection.find().limit(6).toArray();
+      res.send(result);
+    });
     //profile update
     // Update User Profile Photo
     // Update User Profile Photo by Email
