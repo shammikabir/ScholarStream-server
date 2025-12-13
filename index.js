@@ -118,6 +118,55 @@ async function run() {
       const result = await scholarshipsCollection.find().toArray();
       res.send(result);
     });
+    //get scholarship by id
+    app.get("/scholarships/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const scholarship = await scholarshipsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!scholarship)
+          return res.status(404).send({ message: "Scholarship not found" });
+
+        res.status(200).send(scholarship);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Server error" });
+      }
+    });
+
+    //review
+
+    //post review
+    app.post("/reviews", async (req, res) => {
+      try {
+        const review = req.body; // frontend theke je data eseche
+
+        const result = await reviewsCollection.insertOne(review);
+
+        // Insert হলে MongoDB insertedId ফেরত দেয়
+        res.send({ _id: result.insertedId, ...review });
+      } catch (error) {
+        console.log(error);
+        res.send({ message: "Something went wrong" });
+      }
+    });
+
+    //get review
+    app.get("/reviews/:scholarshipId", async (req, res) => {
+      try {
+        const scholarshipId = req.params.scholarshipId;
+        const reviews = await reviewsCollection
+          .find({ scholarshipId })
+          .toArray();
+
+        res.status(200).send(reviews);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Error fetching reviews" });
+      }
+    });
 
     //update scholarship-
 
@@ -147,34 +196,6 @@ async function run() {
         _id: new ObjectId(id),
       });
       res.send({ success: true, result });
-    });
-
-    //scholarship by id
-    app.get("/scholarships/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const result = await scholarshipsCollection.findOne({
-          _id: new ObjectId(id),
-        });
-
-        if (!result) {
-          return res.status(404).send({ message: "Scholarship not found" });
-        }
-
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ message: "Server error" });
-      }
-    });
-
-    //reviews
-    app.post("/reviews", async (req, res) => {
-      const review = req.body;
-
-      review.reviewDate = new Date();
-
-      const result = await reviewsCollection.insertOne(review);
-      res.send(result);
     });
 
     //User manage
