@@ -170,6 +170,23 @@ async function run() {
       }
     });
 
+    //get review for myreview
+    // Express.js route
+    app.get("/my-reviews/:email", async (req, res) => {
+      const { email } = req.params;
+      try {
+        const userReviews = await reviewsCollection
+          .find({ studentEmail: email })
+          .sort({ createdAt: -1 }) // newest first
+          .toArray();
+
+        res.send(userReviews);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Failed to fetch reviews" });
+      }
+    });
+
     //update scholarship-
 
     app.put("/scholarships/:id", async (req, res) => {
@@ -320,12 +337,7 @@ async function run() {
 
     app.post("/create-checkout-session", async (req, res) => {
       try {
-        const { title, price } = req.body;
-
-        // Simple validation
-        if (!title || !price) {
-          return res.status(400).send({ message: "Missing data" });
-        }
+        const { title, price, studentEmail, scholarshipId } = req.body;
 
         const session = await stripe.checkout.sessions.create({
           payment_method_types: ["card"],
@@ -344,8 +356,12 @@ async function run() {
           ],
 
           mode: "payment",
+          metadata: {
+            scholarshipId,
+            studentEmail,
+          },
 
-          success_url: `${process.env.CLIENT_URL}/payment-success`,
+          success_url: `${process.env.CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.CLIENT_URL}/payment-cancle`,
         });
 
@@ -353,6 +369,58 @@ async function run() {
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Stripe session failed" });
+      }
+    });
+
+    //payment update after pay
+    //payment status change
+    app.post("/payment-success", async (req, res) => {
+      try {
+        const { sessionId } = req.body;
+
+        if (!sessionId)
+          return res.status(400).send({ message: "Missing sessionId" });
+
+        // Retrieve the session from Stripe
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+        console.log(session);
+
+        if (session.status === "complete") {
+          // Extract metadata
+          const scholarshipId = session.metadata.scholarshipId;
+          // const studentEmail = session.metadata.studentEmail;
+
+          // Find the application in DB
+          const application = await appplicationsCollection.findOne({
+            scholarshipId,
+          });
+
+          if (!application)
+            return res.status(404).send({ message: "Application not found" });
+
+          // Update payment status and application status
+          await appplicationsCollection.updateOne(
+            { _id: application._id },
+            {
+              $set: {
+                paymentStatus: "paid",
+                applicationStatus: "completed",
+                transactionId: session.payment_intent,
+              },
+            }
+          );
+
+          return res.send({
+            message: "Payment completed and application updated",
+            applicationId: application._id,
+            transactionId: session.payment_intent,
+          });
+        } else {
+          return res.status(400).send({ message: "Payment not completed yet" });
+        }
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Failed to update payment" });
       }
     });
 
@@ -369,6 +437,18 @@ async function run() {
 
       const result = await appplicationsCollection.insertOne(application);
       res.send(result);
+    });
+
+    // check already applied
+    app.get("/applications/check", async (req, res) => {
+      const { scholarshipId, email } = req.query;
+
+      const exists = await appplicationsCollection.findOne({
+        scholarshipId,
+        studentEmail: email,
+      });
+
+      res.send({ applied: !!exists });
     });
 
     //get applications
