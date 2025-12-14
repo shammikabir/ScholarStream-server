@@ -3,6 +3,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -61,6 +62,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const scholarshipsCollection = db.collection("scholarships");
     const reviewsCollection = db.collection("reviews");
+    const appplicationsCollection = db.collection("applications");
 
     console.log("MongoDB Connected Successfully!");
 
@@ -312,6 +314,72 @@ async function run() {
       );
 
       res.send({ message: "Profile photo updated successfully", result });
+    });
+
+    //payments
+
+    app.post("/create-checkout-session", async (req, res) => {
+      try {
+        const { title, price } = req.body;
+
+        // Simple validation
+        if (!title || !price) {
+          return res.status(400).send({ message: "Missing data" });
+        }
+
+        const session = await stripe.checkout.sessions.create({
+          payment_method_types: ["card"],
+
+          line_items: [
+            {
+              price_data: {
+                currency: "usd",
+                product_data: {
+                  name: title,
+                },
+                unit_amount: price * 100, // Stripe works with cents
+              },
+              quantity: 1,
+            },
+          ],
+
+          mode: "payment",
+
+          success_url: `${process.env.CLIENT_URL}/payment-success`,
+          cancel_url: `${process.env.CLIENT_URL}/payment-cancle`,
+        });
+
+        res.send({ url: session.url });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Stripe session failed" });
+      }
+    });
+
+    //application add
+    app.post("/applications", async (req, res) => {
+      const application = {
+        ...req.body,
+        applicationStatus: "pending",
+        paymentStatus: "unpaid",
+        moderatorFeedback: "",
+        transactionId: null,
+        createdAt: new Date(),
+      };
+
+      const result = await appplicationsCollection.insertOne(application);
+      res.send(result);
+    });
+
+    //get applications
+    app.get("/applications/:email", async (req, res) => {
+      const email = req.params.email;
+
+      const result = await appplicationsCollection
+        .find({ studentEmail: email })
+        .toArray();
+
+      res.send(result);
     });
   } finally {
     // Don't close client
