@@ -138,7 +138,7 @@ async function run() {
       }
     });
 
-    //review
+    //review..............................................
 
     //post review
     app.post("/reviews", async (req, res) => {
@@ -147,12 +147,32 @@ async function run() {
 
         const result = await reviewsCollection.insertOne(review);
 
-        // Insert হলে MongoDB insertedId ফেরত দেয়
+        // Insert
         res.send({ _id: result.insertedId, ...review });
       } catch (error) {
         console.log(error);
         res.send({ message: "Something went wrong" });
       }
+    });
+
+    //get all review for moderator
+    app.get("/reviews", async (req, res) => {
+      const result = await reviewsCollection
+        .find()
+        // .sort({ createdAt: -1 })
+        .toArray();
+      res.send(result);
+    });
+
+    //delete review
+    app.delete("/reviews/:id", async (req, res) => {
+      const { id } = req.params;
+
+      const result = await reviewsCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+
+      res.send({ success: true, result });
     });
 
     //get review
@@ -184,6 +204,50 @@ async function run() {
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Failed to fetch reviews" });
+      }
+    });
+
+    //update review
+
+    // PATCH route for updating a review
+    // Update a review (simple way using PUT)
+    app.put("/reviews/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const data = req.body; // expect { rating, comment }
+
+        console.log("Updating Review:", id, data);
+
+        const result = await reviewsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { ...data, updatedAt: new Date() } }
+        );
+
+        if (result.matchedCount === 0) {
+          return res
+            .status(404)
+            .send({ success: false, message: "Review not found" });
+        }
+
+        res.send({ success: true, result });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ success: false, message: err.message });
+      }
+    });
+
+    //
+    // Delete review by ID
+    app.delete("/reviews/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await reviewsCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        res.send({ success: true, result });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ success: false, message: err.message });
       }
     });
 
@@ -460,6 +524,53 @@ async function run() {
         .toArray();
 
       res.send(result);
+    });
+
+    //get all applications
+    app.get("/applications", async (req, res) => {
+      const result = await appplicationsCollection.find().toArray();
+      res.send(result);
+    });
+
+    //update status from moderator
+    // Update status
+    app.put("/applications/status/:id", async (req, res) => {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const result = await appplicationsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { applicationStatus: status } }
+      );
+
+      res.send({ success: true, result });
+    });
+
+    // Add feedback
+    app.put("/applications/feedback/:id", async (req, res) => {
+      const { id } = req.params;
+      const { feedback } = req.body;
+
+      const result = await appplicationsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { feedback } }
+      );
+
+      res.send({ success: true, result });
+    });
+
+    //delete my application
+    app.delete("/applications/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await appplicationsCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        res.send({ success: true, result });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ success: false, message: err.message });
+      }
     });
   } finally {
     // Don't close client
