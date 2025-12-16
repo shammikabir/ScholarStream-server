@@ -182,6 +182,39 @@ async function run() {
       const result = await scholarshipsCollection.find().toArray();
       res.send(result);
     });
+
+    //filter
+
+    app.get("/allscholarships/filter", async (req, res) => {
+      try {
+        const { search = "", country = "", category = "" } = req.query;
+
+        const query = {};
+
+        // Search by name, university or degree
+        if (search) {
+          query.$or = [
+            { scholarshipName: { $regex: search, $options: "i" } },
+            { universityName: { $regex: search, $options: "i" } },
+            { degree: { $regex: search, $options: "i" } },
+          ];
+        }
+
+        // Filter by country
+        if (country) query.country = country;
+
+        // Filter by category
+        if (category) query.scholarshipCategory = category;
+
+        const filteredScholarships = await scholarshipsCollection
+          .find(query)
+          .toArray();
+        res.send(filteredScholarships);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ error: "Server error" });
+      }
+    });
     //get scholarship by id
     app.get("/scholarships/:id", async (req, res) => {
       try {
@@ -655,6 +688,8 @@ async function run() {
         res.status(500).send({ success: false, message: err.message });
       }
     });
+
+    //filter,search,category
   } finally {
     // Don't close client
   }
