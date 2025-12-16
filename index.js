@@ -31,25 +31,36 @@ const client = new MongoClient(uri, {
 
 // -----------------------
 // JWT Verify Middleware
-// -----------------------
-// const verifyToken = (req, res, next) => {
-//   const authHeader = req.headers.authorization;
+app.post("/jwt", (req, res) => {
+  const user = req.body; // { email, role }
+  const token = jwt.sign(user, process.env.JWT_SECRET, {
+    expiresIn: "1d",
+  });
 
-//   if (!authHeader) {
-//     return res.status(401).json({ message: "Unauthorized Access" });
-//   }
+  res.send({ token });
+});
 
-//   const token = authHeader.split(" ")[1];
+//middleware
+const verifyJWT = (req, res, next) => {
+  const authHeader = req.headers.authorization;
 
-//   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-//     if (err) {
-//       return res.status(403).json({ message: "Forbidden Access" });
-//     }
+  if (!authHeader) {
+    return res.status(401).send({ message: "Unauthorized Access" });
+  }
 
-//     req.user = decoded;
-//     next();
-//   });
-// };
+  const token = authHeader.split(" ")[1];
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: "Unauthorized Access" });
+    }
+
+    req.decoded = decoded; // { email, role }
+    console.log(req.decoded);
+
+    next();
+  });
+};
 
 // -----------------------
 // Run Function
@@ -66,10 +77,35 @@ async function run() {
 
     console.log("MongoDB Connected Successfully!");
 
+    //verify admin,moderator
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+
+      const user = await usersCollection.findOne({ email });
+
+      if (user?.role !== "admin") {
+        return res.status(403).send({ message: "Admin only access" });
+      }
+
+      next();
+    };
+    const verifyModerator = async (req, res, next) => {
+      const email = req.decoded.email;
+
+      const user = await usersCollection.findOne({ email });
+
+      if (user?.role !== "moderator") {
+        return res.status(403).send({ message: "Moderator only access" });
+      }
+
+      next();
+    };
+
     // -----------------------------------
     // Get all users (Protected Route)
     // -----------------------------------
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyJWT, async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
@@ -109,8 +145,10 @@ async function run() {
       res.send({ role: user?.role });
     });
 
+    //.............admin......................................
+
     //add-scholarship
-    app.post("/scholarships", async (req, res) => {
+    app.post("/scholarships", verifyJWT, verifyAdmin, async (req, res) => {
       const data = req.body;
       const result = await scholarshipsCollection.insertOne(data);
       res.send({ success: true, result });
@@ -138,189 +176,32 @@ async function run() {
       }
     });
 
-    //review..............................................
-
-    //post review
-    app.post("/reviews", async (req, res) => {
-      try {
-        const review = req.body; // frontend theke je data eseche
-
-        const result = await reviewsCollection.insertOne(review);
-
-        // Insert
-        res.send({ _id: result.insertedId, ...review });
-      } catch (error) {
-        console.log(error);
-        res.send({ message: "Something went wrong" });
-      }
-    });
-
-    //get all review for moderator
-    app.get("/reviews", async (req, res) => {
-      const result = await reviewsCollection
-        .find()
-        // .sort({ createdAt: -1 })
-        .toArray();
-      res.send(result);
-    });
-
-    //delete review
-    app.delete("/reviews/:id", async (req, res) => {
-      const { id } = req.params;
-
-      const result = await reviewsCollection.deleteOne({
-        _id: new ObjectId(id),
-      });
-
-      res.send({ success: true, result });
-    });
-
-    //get review
-    app.get("/reviews/:scholarshipId", async (req, res) => {
-      try {
-        const scholarshipId = req.params.scholarshipId;
-        const reviews = await reviewsCollection
-          .find({ scholarshipId })
-          .toArray();
-
-        res.status(200).send(reviews);
-      } catch (err) {
-        console.error(err);
-        res.status(500).send({ message: "Error fetching reviews" });
-      }
-    });
-
-    //get review for myreview
-    // Express.js route
-    app.get("/my-reviews/:email", async (req, res) => {
-      const { email } = req.params;
-      try {
-        const userReviews = await reviewsCollection
-          .find({ studentEmail: email })
-          .sort({ createdAt: -1 }) // newest first
-          .toArray();
-
-        res.send(userReviews);
-      } catch (error) {
-        console.error(error);
-        res.status(500).send({ message: "Failed to fetch reviews" });
-      }
-    });
-
-    //update review
-
-    // PATCH route for updating a review
-    // Update a review (simple way using PUT)
-    app.put("/reviews/:id", async (req, res) => {
-      try {
-        const { id } = req.params;
-        const data = req.body; // expect { rating, comment }
-
-        console.log("Updating Review:", id, data);
-
-        const result = await reviewsCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: { ...data, updatedAt: new Date() } }
-        );
-
-        if (result.matchedCount === 0) {
-          return res
-            .status(404)
-            .send({ success: false, message: "Review not found" });
-        }
-
-        res.send({ success: true, result });
-      } catch (err) {
-        console.error(err);
-        res.status(500).send({ success: false, message: err.message });
-      }
-    });
-
-    //
-    // Delete review by ID
-    app.delete("/reviews/:id", async (req, res) => {
-      try {
-        const { id } = req.params;
-        const result = await reviewsCollection.deleteOne({
-          _id: new ObjectId(id),
-        });
-        res.send({ success: true, result });
-      } catch (err) {
-        console.error(err);
-        res.status(500).send({ success: false, message: err.message });
-      }
-    });
-
-    //update scholarship-
-
-    app.put("/scholarships/:id", async (req, res) => {
-      try {
-        const { id } = req.params;
-        const data = req.body;
-
-        console.log("Updating Scholarship:", id, data); // <-- Add this
-
-        const result = await scholarshipsCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: data }
-        );
-
-        res.send({ success: true, result });
-      } catch (err) {
-        console.error(err);
-        res.status(500).send({ success: false, message: err.message });
-      }
-    });
-
-    //  DELETE  scholarship
-    app.delete("/scholarships/:id", async (req, res) => {
-      const { id } = req.params;
-      const result = await scholarshipsCollection.deleteOne({
-        _id: new ObjectId(id),
-      });
-      res.send({ success: true, result });
-    });
-
-    //User manage
-    //filter role--user
-
-    app.get("/users/filter", async (req, res) => {
-      const role = req.query.role;
-
-      let query = {};
-      if (role && role !== "all") {
-        query.role = role;
-      }
-
-      const users = await usersCollection.find(query).toArray();
-
-      res.send({
-        success: true,
-        users,
-      });
-    });
-
     //user role update
 
     // Update User Role
-    app.put("/user/update-role/:email", async (req, res) => {
-      const email = req.params.email;
-      const { role } = req.body;
+    app.put(
+      "/user/update-role/:email",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        const email = req.params.email;
+        const { role } = req.body;
 
-      const result = await usersCollection.updateOne(
-        { email },
-        { $set: { role } }
-      );
+        const result = await usersCollection.updateOne(
+          { email },
+          { $set: { role } }
+        );
 
-      res.send({
-        success: true,
-        message: "User role updated successfully",
-        result,
-      });
-    });
+        res.send({
+          success: true,
+          message: "User role updated successfully",
+          result,
+        });
+      }
+    );
 
     // Delete User by Email
-    app.delete("/user/:email", async (req, res) => {
+    app.delete("/user/:email", verifyJWT, verifyAdmin, async (req, res) => {
       const email = req.params.email;
 
       const result = await usersCollection.deleteOne({ email });
@@ -333,7 +214,7 @@ async function run() {
     });
 
     //analytics
-    app.get("/analytics", async (req, res) => {
+    app.get("/analytics", verifyJWT, verifyAdmin, async (req, res) => {
       const totalUsers = await usersCollection.countDocuments();
       const totalScholarships = await scholarshipsCollection.countDocuments();
 
@@ -376,6 +257,174 @@ async function run() {
         categoryDistribution,
       });
     });
+
+    //update scholarship-
+
+    app.put("/scholarships/:id", verifyJWT, verifyAdmin, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const data = req.body;
+
+        console.log("Updating Scholarship:", id, data); // <-- Add this
+
+        const result = await scholarshipsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: data }
+        );
+
+        res.send({ success: true, result });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ success: false, message: err.message });
+      }
+    });
+
+    //  DELETE  scholarship
+    app.delete(
+      "/scholarships/:id",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        const { id } = req.params;
+        const result = await scholarshipsCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        res.send({ success: true, result });
+      }
+    );
+
+    //User manage
+    //filter role--user
+
+    app.get("/users/filter", verifyJWT, verifyAdmin, async (req, res) => {
+      const role = req.query.role;
+
+      let query = {};
+      if (role && role !== "all") {
+        query.role = role;
+      }
+
+      const users = await usersCollection.find(query).toArray();
+
+      res.send({
+        success: true,
+        users,
+      });
+    });
+
+    //review..............................................
+
+    //post review
+    app.post("/reviews", verifyJWT, async (req, res) => {
+      try {
+        const review = req.body; // frontend theke je data eseche
+
+        const result = await reviewsCollection.insertOne(review);
+
+        // Insert
+        res.send({ _id: result.insertedId, ...review });
+      } catch (error) {
+        console.log(error);
+        res.send({ message: "Something went wrong" });
+      }
+    });
+
+    //get all review for moderator
+    app.get("/reviews", async (req, res) => {
+      const result = await reviewsCollection
+        .find()
+        // .sort({ createdAt: -1 })
+        .toArray();
+      res.send(result);
+    });
+
+    //delete review
+    app.delete("/reviews/:id", verifyJWT, verifyModerator, async (req, res) => {
+      const { id } = req.params;
+
+      const result = await reviewsCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+
+      res.send({ success: true, result });
+    });
+
+    //get review
+    app.get("/reviews/:scholarshipId", async (req, res) => {
+      try {
+        const scholarshipId = req.params.scholarshipId;
+        const reviews = await reviewsCollection
+          .find({ scholarshipId })
+          .toArray();
+
+        res.status(200).send(reviews);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Error fetching reviews" });
+      }
+    });
+
+    //get review for myreview
+    // Express.js route
+    app.get("/my-reviews/:email", verifyJWT, async (req, res) => {
+      const { email } = req.params;
+      try {
+        const userReviews = await reviewsCollection
+          .find({ studentEmail: email })
+          .sort({ createdAt: -1 }) // newest first
+          .toArray();
+
+        res.send(userReviews);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Failed to fetch reviews" });
+      }
+    });
+
+    //update review
+
+    // PATCH route for updating a review
+    // Update a review (simple way using PUT)
+    app.put("/reviews/:id", verifyJWT, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const data = req.body; // expect { rating, comment }
+
+        console.log("Updating Review:", id, data);
+
+        const result = await reviewsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { ...data, updatedAt: new Date() } }
+        );
+
+        if (result.matchedCount === 0) {
+          return res
+            .status(404)
+            .send({ success: false, message: "Review not found" });
+        }
+
+        res.send({ success: true, result });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ success: false, message: err.message });
+      }
+    });
+
+    //
+    // Delete review by ID
+    app.delete("/reviews/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await reviewsCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        res.send({ success: true, result });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ success: false, message: err.message });
+      }
+    });
+
     //get limited bill for home
 
     app.get("/top-scholarships", async (req, res) => {
@@ -489,7 +538,7 @@ async function run() {
     });
 
     //application add
-    app.post("/applications", async (req, res) => {
+    app.post("/applications", verifyJWT, async (req, res) => {
       const application = {
         ...req.body,
         applicationStatus: "pending",
@@ -516,7 +565,7 @@ async function run() {
     });
 
     //get applications
-    app.get("/applications/:email", async (req, res) => {
+    app.get("/applications/:email", verifyJWT, async (req, res) => {
       const email = req.params.email;
 
       const result = await appplicationsCollection
@@ -527,37 +576,47 @@ async function run() {
     });
 
     //get all applications
-    app.get("/applications", async (req, res) => {
+    app.get("/applications", verifyJWT, async (req, res) => {
       const result = await appplicationsCollection.find().toArray();
       res.send(result);
     });
 
-    //update status from moderator
+    //.............update status from moderator.....................
     // Update status
-    app.put("/applications/status/:id", async (req, res) => {
-      const { id } = req.params;
-      const { status } = req.body;
+    app.put(
+      "/applications/status/:id",
+      verifyJWT,
+      verifyModerator,
+      async (req, res) => {
+        const { id } = req.params;
+        const { status } = req.body;
 
-      const result = await appplicationsCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { applicationStatus: status } }
-      );
+        const result = await appplicationsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { applicationStatus: status } }
+        );
 
-      res.send({ success: true, result });
-    });
+        res.send({ success: true, result });
+      }
+    );
 
     // Add feedback
-    app.put("/applications/feedback/:id", async (req, res) => {
-      const { id } = req.params;
-      const { feedback } = req.body;
+    app.put(
+      "/applications/feedback/:id",
+      verifyJWT,
+      verifyModerator,
+      async (req, res) => {
+        const { id } = req.params;
+        const { feedback } = req.body;
 
-      const result = await appplicationsCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { feedback } }
-      );
+        const result = await appplicationsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { feedback } }
+        );
 
-      res.send({ success: true, result });
-    });
+        res.send({ success: true, result });
+      }
+    );
 
     //delete my application
     app.delete("/applications/:id", async (req, res) => {
