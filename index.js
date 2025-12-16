@@ -31,17 +31,29 @@ const client = new MongoClient(uri, {
 
 // -----------------------
 // JWT Verify Middleware
-app.post("/jwt", (req, res) => {
-  const user = req.body; // { email, role }
-  const token = jwt.sign(user, process.env.JWT_SECRET, {
-    expiresIn: "1d",
-  });
+// -----------------------
+// JWT create (SECURE)
+// -----------------------
+app.post("/jwt", async (req, res) => {
+  try {
+    const { email } = req.body; // make sure email is sent
 
-  res.send({ token });
+    // optional: check if user exists in DB
+    // const user = await User.findOne({ email });
+    // if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const token = jwt.sign({ email }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
+    });
+    res.json({ token });
+  } catch (err) {
+    console.error(err); // check this in terminal
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
-
 //middleware
 const verifyJWT = (req, res, next) => {
+  console.log("VERIFY JWT MIDDLEWARE HIT");
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
@@ -54,9 +66,8 @@ const verifyJWT = (req, res, next) => {
     if (err) {
       return res.status(401).send({ message: "Unauthorized Access" });
     }
-
+    console.log("JWT VERIFIED USER:", decoded);
     req.decoded = decoded; // { email, role }
-    console.log(req.decoded);
 
     next();
   });
@@ -139,10 +150,23 @@ async function run() {
     // -----------------------------------
     // Get User Role
     // -----------------------------------
-    app.get("/user/role/:email", async (req, res) => {
+    app.get("/user/role/:email", verifyJWT, async (req, res) => {
       const email = req.params.email;
+
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: "Forbidden" });
+      }
+
       const user = await usersCollection.findOne({ email });
       res.send({ role: user?.role });
+    });
+
+    app.get("/user/role", verifyJWT, async (req, res) => {
+      const email = req.decoded.email;
+
+      const user = await usersCollection.findOne({ email });
+
+      res.send({ role: user?.role || "user" });
     });
 
     //.............admin......................................
@@ -339,7 +363,7 @@ async function run() {
     });
 
     //delete review
-    app.delete("/reviews/:id", verifyJWT, verifyModerator, async (req, res) => {
+    app.delete("/reviews/:id", verifyJWT, async (req, res) => {
       const { id } = req.params;
 
       const result = await reviewsCollection.deleteOne({
