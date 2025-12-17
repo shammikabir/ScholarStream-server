@@ -215,6 +215,28 @@ async function run() {
         res.status(500).send({ error: "Server error" });
       }
     });
+
+    //sort
+    app.get("/allscholarships/sort", async (req, res) => {
+      const { sort } = req.query;
+
+      let sortQuery = {};
+
+      if (sort === "a-b") {
+        sortQuery = { applicationFees: 1 }; // Low → High
+      }
+
+      if (sort === "b-a") {
+        sortQuery = { applicationFees: -1 }; // High → Low
+      }
+
+      const result = await scholarshipsCollection
+        .find()
+        .sort(sortQuery)
+        .toArray();
+
+      res.send(result);
+    });
     //get scholarship by id
     app.get("/scholarships/:id", async (req, res) => {
       try {
